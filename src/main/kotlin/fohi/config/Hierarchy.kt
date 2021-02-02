@@ -28,7 +28,7 @@ class Hierarchy : CliktCommand("") {
                     "Depth should be greater than 0."
                 }
             }
-    private val branch: Int by option("-b", "--brach", help = "Branching size of directories").int()
+    private val branch: Int by option("-b", "--branch", help = "Branching size of directories").int()
             .prompt("Enter branch size").validate {
                 require(ceil(log(branch.toDouble(), 16.0)) == floor(log(branch.toDouble(), 16.0))) {
                     "Branch should be in power of 16 (16,256,..) "
