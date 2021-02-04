@@ -8,3 +8,5 @@ import fohi.config.Hierarchy
 import kotlin.math.log
 
 fun main(args: Array<String>) = Hierarchy().main(args)
+
+
