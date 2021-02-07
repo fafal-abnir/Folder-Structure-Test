@@ -12,6 +12,9 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.nio.file.Files
 import java.nio.file.Paths
+import java.util.concurrent.Callable
+import java.util.concurrent.Executor
+import java.util.concurrent.Executors
 import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.log
@@ -47,10 +50,17 @@ class Hierarchy : CliktCommand("") {
                     "file count should be greater than 0."
                 }
             }
+    private val threadCount: Int by option("-t", "--thread-count", help = "Thread count for test").int()
+            .prompt("Enter file count").validate {
+                require(threadCount > 0) {
+                    "threadCount count should be greater than 0."
+                }
+            }
     private val sep = File.separator
 
 
     private fun putGetTest() {
+        val executorsService = Executors.newFixedThreadPool(threadCount)
         val writeCSVFilePath = "d:$depth-b:$branch-s:$fileSize-c:$fileCount-write.csv"
         val readCSVFilePath = "d:$depth-b:$branch-s:$fileSize-c:$fileCount-read.csv"
         val writer = Files.newBufferedWriter(Paths.get(writeCSVFilePath))
@@ -72,43 +82,60 @@ class Hierarchy : CliktCommand("") {
         val starTime = System.currentTimeMillis()
         var duration: Long
         var filePath: String
-        for (i in 1..fileCount) {
-
-            filePath = getFilePath(i)
-            writeTime = measureTimeMillis {
-                FileOutputStream(filePath).use {
-                    it.write(randomBytes);
-                }
-            }
-            writeLatencies.add(writeTime)
-
-
-            if (i % 1000 == 0) {
-                duration = System.currentTimeMillis() - starTime
-                println("Count:${i}  Average_Write_Latency:${writeLatencies.average()} duration:$duration")
-                writeCSVPrinter.printRecord(i, writeLatencies.average(), duration)
-                writeCSVPrinter.flush()
-                writeLatencies.clear()
-
-                for (j in 0..20) {
-                    filePath = getFilePath(Random.nextInt(1, i))
-                    readTime = measureTimeMillis {
-                        FileInputStream(filePath).use {
-                            randomBytes = it.readBytes()
+        var readWriteList=ArrayList<Callable<Pair<Char,Long>>>()
+        for (i in 1..fileCount/1000) {
+            for (j in 1..1000){
+                readWriteList.add(Callable {
+                    filePath = getFilePath(i)
+                    writeTime = measureTimeMillis {
+                        FileOutputStream(filePath).use {
+                            it.write(randomBytes);
                         }
                     }
-                    readLatencies.add(readTime)
-                }
-                duration = System.currentTimeMillis() - starTime
-                println("Count:${i}  Average_Read_Latency:${readLatencies.average()} duration:$duration")
-                readCSVPrinter.printRecord(i, readLatencies.average(), duration)
-                readCSVPrinter.flush()
-                readLatencies.clear()
+                    'w' to writeTime
+                })
             }
-        }
+            if(i>1){
+                for (j in 1..20){
+                    readWriteList.add(Callable {
+                        filePath = getFilePath(Random.nextInt(1, i))
+                        readTime = measureTimeMillis {
+                            FileInputStream(filePath).use {
+                                randomBytes = it.readBytes()
+                            }
+                        }
+                        'r' to readTime
+                    })
+                }
+            }
+
+            var results = executorsService.invokeAll(readWriteList)
+            for (result in results){
+                if(result.get().first=='w'){
+                    writeLatencies.add(result.get().second)
+                }
+                else {
+                    readLatencies.add(result.get().second)
+                }
+            }
+            duration = System.currentTimeMillis() - starTime
+            println("Count:${i*1000}  Average_Write_Latency:${writeLatencies.average()} duration:$duration")
+            writeCSVPrinter.printRecord(i, writeLatencies.average(), duration)
+            writeCSVPrinter.flush()
+            writeLatencies.clear()
+            duration = System.currentTimeMillis() - starTime
+            println("Count:${i*1000}  Average_Read_Latency:${readLatencies.average()} duration:$duration")
+            readCSVPrinter.printRecord(i, readLatencies.average(), duration)
+            readCSVPrinter.flush()
+            readLatencies.clear()
+            readWriteList.clear()
+            }
+
         readCSVPrinter.close()
         writeCSVPrinter.close()
+        executorsService.shutdown()
     }
+
 
     private fun getFilePath(number: Int): String {
         val subDirectoryLengthName = log(branch.toDouble(), 16.0).toInt()
