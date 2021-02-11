@@ -12,9 +12,12 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.nio.file.Files
 import java.nio.file.Paths
+import java.util.*
 import java.util.concurrent.Callable
+import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
+import kotlin.collections.ArrayList
 import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.log
@@ -51,7 +54,7 @@ class Hierarchy : CliktCommand("") {
                 }
             }
     private val threadCount: Int by option("-t", "--thread-count", help = "Thread count for test").int()
-            .prompt("Enter file count").validate {
+            .prompt("Enter thread count").validate {
                 require(threadCount > 0) {
                     "threadCount count should be greater than 0."
                 }
@@ -82,26 +85,32 @@ class Hierarchy : CliktCommand("") {
         val starTime = System.currentTimeMillis()
         var duration: Long
         var filePath: String
-        var readWriteList=ArrayList<Callable<Pair<Char,Long>>>()
-        for (i in 1..fileCount/1000) {
-            for (j in 1..1000){
+        val readWriteList=ArrayList<Callable<Pair<Char,Long>>>()
+        for (i in 0..(fileCount/100)) {
+            for (j in 0..99){
                 readWriteList.add(Callable {
-                    filePath = getFilePath(i)
+                    filePath = getFilePath(i*100+j)
                     writeTime = measureTimeMillis {
                         FileOutputStream(filePath).use {
-                            it.write(randomBytes);
+                            it.write(randomBytes)
                         }
                     }
                     'w' to writeTime
                 })
             }
-            if(i>1){
+            if(i>5){
                 for (j in 1..20){
                     readWriteList.add(Callable {
-                        filePath = getFilePath(Random.nextInt(1, i))
+                        val x = Random.nextInt(1, (i-3)*100)
+                        filePath = getFilePath(x)
                         readTime = measureTimeMillis {
-                            FileInputStream(filePath).use {
-                                randomBytes = it.readBytes()
+                            try {
+                                FileInputStream(filePath).use {
+                                    randomBytes = it.readBytes()
+                                }
+                            } catch (e:Throwable){
+                                println(e.stackTrace)
+                                println("$x $filePath")
                             }
                         }
                         'r' to readTime
@@ -109,7 +118,7 @@ class Hierarchy : CliktCommand("") {
                 }
             }
 
-            var results = executorsService.invokeAll(readWriteList)
+            val results = executorsService.invokeAll(readWriteList)
             for (result in results){
                 if(result.get().first=='w'){
                     writeLatencies.add(result.get().second)
@@ -119,12 +128,12 @@ class Hierarchy : CliktCommand("") {
                 }
             }
             duration = System.currentTimeMillis() - starTime
-            println("Count:${i*1000}  Average_Write_Latency:${writeLatencies.average()} duration:$duration")
+            println("Count:${i*100}  Average_Write_Latency:${writeLatencies.average()} duration:$duration")
             writeCSVPrinter.printRecord(i, writeLatencies.average(), duration)
             writeCSVPrinter.flush()
             writeLatencies.clear()
             duration = System.currentTimeMillis() - starTime
-            println("Count:${i*1000}  Average_Read_Latency:${readLatencies.average()} duration:$duration")
+            println("Count:${i*100}  Average_Read_Latency:${readLatencies.average()} duration:$duration")
             readCSVPrinter.printRecord(i, readLatencies.average(), duration)
             readCSVPrinter.flush()
             readLatencies.clear()
@@ -137,7 +146,7 @@ class Hierarchy : CliktCommand("") {
     }
 
 
-    private fun getFilePath(number: Int): String {
+    fun getFilePath(number: Int): String {
         val subDirectoryLengthName = log(branch.toDouble(), 16.0).toInt()
         val fileName: String
         val filePath: String

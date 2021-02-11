@@ -30,7 +30,8 @@ It will output csv file for result of test.(e.g d:3-b:256-s:1024-c:1000.csv)
     - File count for test
 - --help, -h
     - Show options of program
-
+- --thread-count, -t
+    - Thread count for test
 ## Contributing
 
 Please feel free to give any feedback for enhancing the project
